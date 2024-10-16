@@ -380,13 +380,16 @@ fn oneof_message_field(syntax: Syntax) -> impl FnMut(&str) -> IResult<&str, Fiel
 fn one_of(syntax: Syntax) -> impl FnMut(&str) -> IResult<&str, OneOf> {
     move |input| {
         map(
-            pair(
-                preceded(pair(tag("oneof"), many1(br)), word),
-                delimited(
-                    pair(many0(br), tag("{")),
-                    many1(delimited(many0(br), oneof_message_field(syntax), many0(br))),
-                    tag("}"),
+            terminated(
+                pair(
+                    preceded(pair(tag("oneof"), many1(br)), word),
+                    delimited(
+                        pair(many0(br), tag("{")),
+                        many1(delimited(many0(br), oneof_message_field(syntax), many0(br))),
+                        tag("}"),
+                    ),
                 ),
+                opt(pair(many0(br), tag(";"))),
             ),
             |(name, fields)| OneOf {
                 name,
@@ -1571,5 +1574,28 @@ mod test {
             }"#,
         );
         assert!(e.is_ok());
+    }
+
+    #[test]
+    fn test_oneof_with_semicolon() {
+        // https://github.com/tafia/quick-protobuf/issues/261
+        let msg = r#"
+    message Dimension {
+        oneof value {
+            int64 dim_value = 1;
+            string dim_param = 2;   // namespace Shape
+        };
+        optional string denotation = 3;
+    };
+    "#;
+        let desc = file_descriptor(msg).unwrap().1;
+        assert_eq!(1, desc.messages.len());
+        let message = &desc.messages[0];
+        assert_eq!("Dimension", message.name);
+        assert_eq!(1, message.oneofs.len());
+        assert_eq!(1, message.fields.len()); // denotation
+        let oneof = &message.oneofs[0];
+        assert_eq!("value", oneof.name);
+        assert_eq!(2, oneof.fields.len());
     }
 }
